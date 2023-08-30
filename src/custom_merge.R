@@ -35,10 +35,10 @@ rm(run1_8)
 in.path = "../../BCexh_scRNAseq/data/doublet_output/"
 out.path = "../../BCexh_scRNAseq/data/out/"
 
-TBB035 <- readRDS(file = paste0(in.path, 'TBB035/TBB035_singlet.rds'))
-TBB184 <- readRDS(file = paste0(in.path, 'TBB184/TBB184_singlet.rds'))
-TBB011 <- readRDS(file = paste0(in.path, 'TBB011/TBB011_singlet.rds'))
-TBB212 <- readRDS(file = paste0(in.path, 'TBB212/TBB212_singlet.rds'))
+TBB035 <- readRDS(file = paste0(in.path, 'TBB035_singlet.rds'))
+TBB184 <- readRDS(file = paste0(in.path, 'TBB184_singlet.rds'))
+TBB011 <- readRDS(file = paste0(in.path, 'TBB011_singlet.rds'))
+TBB212 <- readRDS(file = paste0(in.path, 'TBB212_singlet.rds'))
 
 merge1 <- merge(x=run1.pilot, y = TBB011, add.cell.ids = c("", "TBB011"))
 merge2 <- merge(x=merge1, y = TBB035, add.cell.ids = c("", "TBB035"))
