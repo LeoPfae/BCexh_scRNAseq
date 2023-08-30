@@ -25,6 +25,8 @@ library(DoubletFinder)
 in.path = "C:/Users/SandraT/BBlab/Macrophages/Sorting/scRNA_seq/Data/10x/Run_02/CellRangerCount_40342_2019-10-15--13-52-11/"
 out.path = "Z:/server_homes/sandrat/Code/10x/DoubletFinder/output/TBB184/"
 TBB184.data <- Read10X(paste0(in.path, "TBB184/filtered_feature_bc_matrix"))
+TBB184.data <- read.table("../../data/E-MTAB-10607/TBB184_singlecell_count_matrix.txt")
+TBB184.data <- as(as.matrix(TBB184.data), "sparseMatrix")
 ```
 
 # Individual Sample preprocessing
@@ -69,9 +71,9 @@ FeaturePlot(TBB184, reduction = 'umap', features = c("CD3E", "CD14", "PTPRC", "E
 
 ```{r}
 #Read in table with cluster ids
-cluster.ids <- read.csv(file = paste0(out.path, "cluster_celltype.csv"))
+cluster.ids <- read.csv(file = "../../03_Additional_files/cluster_celltypes_res2_v2.csv")
 
-new.cluster.ids <- cluster.ids$celltype
+new.cluster.ids <- cluster.ids$cell.type
 new.cluster.ids <- as.character(new.cluster.ids)
 names(x = new.cluster.ids) <- levels(x = TBB184)
 TBB184 <- RenameIdents(object = TBB184, new.cluster.ids)
@@ -144,7 +146,7 @@ table(TBB184@meta.data$DF_hi.lo, TBB184@meta.data$annotation)
 Idents(TBB184) <- TBB184@meta.data$DF_hi.lo
 
 # Create a Seurat object with only the immune cell clusters
-TBB184.singlet <- subset(x = TBB184, idents =c("Singlet", "Doublet_lo"))
+TBB184.singlet <- subset(x = TBB184, idents =c("Singlet"))
 
 #Test
 DimPlot(object = TBB184.singlet, reduction = 'umap', pt.size = 0.5)
@@ -165,5 +167,5 @@ TBB184.singlet$DF.classifications_0.25_0.02_1054 <- NULL
 #TBB184.singlet$DF_hi.lo<- NULL
 
 #Save Seurat object
-saveRDS(TBB184.singlet, file = paste0(out.path, "TBB184_singlet.rds"))
+saveRDS(TBB184.singlet, file = paste0("../../data/doublet_output/", "TBB184_singlet.rds"))
 ```

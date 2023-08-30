@@ -25,6 +25,8 @@ library(DoubletFinder)
 in.path = "~/Data/Sequencing_data/10x_run2_cellranger_FilteredFeatureMatrix/"
 out.path = "~/Code/10x/DoubletFinder/output/TBB011/"
 TBB011.data <- Read10X(paste0(in.path, "TBB011"))
+TBB011.data <- read.table("../../data/E-MTAB-10607/TBB011_singlecell_count_matrix.txt")
+TBB011.data <- as(as.matrix(TBB011.data), "sparseMatrix")
 ```
 
 # Individual Sample preprocessing
@@ -70,9 +72,9 @@ ggsave(paste0(out.path, "FeaturePlot.png"), width=10, height=10)
 
 ```{r}
 #Read in table with cluster ids
-cluster.ids <- read.csv(file = paste0(out.path, "cluster_celltype.csv"))
+cluster.ids <- read.csv(file = "../../03_Additional_files/cluster_celltypes_res2_v2.csv")
 
-new.cluster.ids <- cluster.ids$celltype
+new.cluster.ids <- cluster.ids$cell.type
 new.cluster.ids <- as.character(new.cluster.ids)
 names(x = new.cluster.ids) <- levels(x = TBB011)
 TBB011 <- RenameIdents(object = TBB011, new.cluster.ids)
@@ -144,7 +146,7 @@ table(TBB011@meta.data$DF_hi.lo, TBB011@meta.data$annotation)
 Idents(TBB011) <- TBB011@meta.data$DF_hi.lo
 
 # Create a Seurat object with only the immune cell clusters
-TBB011.singlet <- subset(x = TBB011, idents =c("Singlet", "Doublet_lo"))
+TBB011.singlet <- subset(x = TBB011, idents =c("Singlet"))
 
 #Test
 DimPlot(object = TBB011.singlet, reduction = 'umap', pt.size = 0.5)
@@ -162,5 +164,5 @@ TBB011.singlet$DF.classifications_0.25_0.005_759 <- NULL
 #TBB011.singlet$DF_hi.lo<- NULL
 
 #Save Seurat object
-saveRDS(TBB011.singlet, file = paste0(out.path, "TBB011_singlet.rds"))
+saveRDS(TBB011.singlet, file = paste0("../../data/doublet_output/", "TBB011_singlet.rds"))
 ```

@@ -32,6 +32,8 @@ library(DoubletFinder)
 in.path = "~/Data/Sequencing_data/10x_pilot/"
 out.path = "~/Code/10x/10x_Run1_Pilot_comb/output/DoubletFinder/TBB338/"
 TBB338.data <- Read10X(paste0(in.path, "TBB338/filtered_feature_bc_matrix"))
+TBB338.data <- read.table("../../data/E-MTAB-10607/TBB338_singlecell_count_matrix.txt")
+TBB338.data <- as(as.matrix(TBB338.data), "sparseMatrix")
 ```
 
 # Individual Sample preprocessing
@@ -81,9 +83,9 @@ FeaturePlot(TBB338, reduction = 'umap', features = c("CD3E", "CD14", "PTPRC", "E
 
 ```{r}
 #Read in table with cluster ids
-cluster.ids <- read.csv(file = paste0(out.path, "cluster_celltype.csv"))
+cluster.ids <- read.csv(file = "../../03_Additional_files/cluster_celltypes_res2_v2.csv")
 
-new.cluster.ids <- cluster.ids$celltype
+new.cluster.ids <- cluster.ids$cell.type
 new.cluster.ids <- as.character(new.cluster.ids)
 names(x = new.cluster.ids) <- levels(x = TBB338)
 TBB338 <- RenameIdents(object = TBB338, new.cluster.ids)
@@ -157,11 +159,11 @@ table(TBB338@meta.data$DF_hi.lo, TBB338@meta.data$RNA_snn_res.0.4)
 Idents(TBB338) <- TBB338@meta.data$DF_hi.lo
 
 # Create a Seurat object with only the immune cell clusters
-TBB338.singlet <- SubsetData(object = TBB338, ident.use = c("Singlet", "Doublet_lo"))
+TBB338.singlet <- subset(x = TBB338, idents = c("Singlet"))
 
 #Test
 DimPlot(object = TBB338.singlet, reduction = 'tsne', pt.size = 0.5)
 
 #Save Seurat object
-saveRDS(TBB338.singlet, file = paste0(out.path, "TBB338_singlet.rds"))
+saveRDS(TBB338.singlet, file = paste0("../../data/doublet_output/", "TBB338_singlet.rds"))
 ```

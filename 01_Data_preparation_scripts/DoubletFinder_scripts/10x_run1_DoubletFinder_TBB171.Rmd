@@ -32,6 +32,8 @@ library(DoubletFinder)
 in.path = "~/RNAseq/fgcz/ST_TAMsBC_10x_Run01/CellRangerCount_37250_2019-05-27--16-31-27/"
 out.path = "~/Code/10x/DoubletFinder/output/TBB171/"
 TBB171.data <- Read10X(paste0(in.path, "T_BB171/filtered_feature_bc_matrix"))
+TBB171.data <- read.table("../../data/E-MTAB-10607/TBB171_singlecell_count_matrix.txt")
+TBB171.data <- as(as.matrix(TBB171.data), "sparseMatrix")
 ```
 
 # Individual Sample preprocessing
@@ -81,9 +83,9 @@ TBB171 <- FindClusters(object = TBB171, resolution = 0.4)
 
 ```{r}
 #Read in table with cluster ids
-cluster.ids <- read.csv(file = paste0(out.path, "cluster_celltype.csv"))
+cluster.ids <- read.csv(file = "../../03_Additional_files/cluster_celltypes_res2_v2.csv")
 
-new.cluster.ids <- cluster.ids$celltype
+new.cluster.ids <- cluster.ids$cell.type
 new.cluster.ids <- as.character(new.cluster.ids)
 names(x = new.cluster.ids) <- levels(x = TBB171)
 TBB171 <- RenameIdents(object = TBB171, new.cluster.ids)
@@ -121,7 +123,7 @@ TBB171 <- doubletFinder_v3(TBB171, PCs = 1:15, pN = 0.25, pK = 0.005, nExp = nEx
 
 ## Plot results 
 ```{r}
-TBB171@meta.data[,"DF_hi.lo"] <- TBB171@meta.data$DF.classifications_0.25_0.02_700
+TBB171@meta.data[,"DF_hi.lo"] <- TBB171@meta.data$DF.classifications_0.25_0.005_700
 TBB171@meta.data$DF_hi.lo[which(TBB171@meta.data$DF_hi.lo == "Doublet" & TBB171@meta.data$DF.classifications_0.25_0.02_457 == "Singlet")] <- "Doublet_lo"
 TBB171@meta.data$DF_hi.lo[which(TBB171@meta.data$DF_hi.lo == "Doublet")] <- "Doublet_hi"
 UMAPPlot(TBB171, group.by="DF_hi.lo", plot.order=c("Doublet_hi","Doublet_lo","Singlet"), colors.use=c("black","gold","red"))
@@ -153,7 +155,7 @@ table(TBB171@meta.data$DF_hi.lo, TBB171@meta.data$RNA_snn_res.0.4)
 Idents(TBB171) <- TBB171@meta.data$DF_hi.lo
 
 # Create a Seurat object with only the immune cell clusters
-TBB171.singlet <- subset(x = TBB171, idents = c("Singlet", "Doublet_lo"))
+TBB171.singlet <- subset(x = TBB171, idents = c("Singlet"))
 
 #Test
 DimPlot(object = TBB171.singlet, reduction = 'tsne', pt.size = 0.5)
@@ -166,5 +168,5 @@ TBB171.singlet$DF_hi.lo<- NULL
 
 
 #Save Seurat object
-saveRDS(TBB171.singlet, file = paste0(out.path, "TBB171_singlet.rds"))
+saveRDS(TBB171.singlet, file = paste0("../../data/doublet_output/", "TBB171_singlet.rds"))
 ```

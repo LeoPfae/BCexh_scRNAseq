@@ -32,6 +32,8 @@ library(DoubletFinder)
 in.path = "Z:/server_homes/sandrat/RNAseq/fgcz/ST_TAMsBC_10x_Run01/CellRangerCount_37250_2019-05-27--16-31-27/"
 out.path = "Z:/server_homes/sandrat/Code/10x/DoubletFinder/output/TBB165/"
 TBB165.data <- Read10X(paste0(in.path, "T_BB165/filtered_feature_bc_matrix"))
+TBB165.data <- read.table("../../data/E-MTAB-10607/TBB165_singlecell_count_matrix.txt")
+TBB165.data <- as(as.matrix(TBB165.data), "sparseMatrix")
 ```
 
 # Individual Sample preprocessing
@@ -81,9 +83,9 @@ VlnPlot(object = TBB165, features = c("nFeature_RNA", "nCount_RNA", "percent.mit
 
 ```{r}
 #Read in table with cluster ids
-cluster.ids <- read.csv(file = paste0(out.path, "cluster_celltype.csv"))
+cluster.ids <- read.csv(file = "../../03_Additional_files/cluster_celltypes_res2_v2.csv")
 
-new.cluster.ids <- cluster.ids$celltype
+new.cluster.ids <- cluster.ids$cell.type
 new.cluster.ids <- as.character(new.cluster.ids)
 names(x = new.cluster.ids) <- levels(x = TBB165)
 TBB165 <- RenameIdents(object = TBB165, new.cluster.ids)
@@ -155,7 +157,7 @@ table(TBB165@meta.data$DF_hi.lo, TBB165@meta.data$RNA_snn_res.0.4)
 Idents(TBB165) <- TBB165@meta.data$DF_hi.lo
 
 # Create a Seurat object with only the immune cell clusters
-TBB165.singlet <- subset(x = TBB165, idents = c("Singlet", "Doublet_lo"))
+TBB165.singlet <- subset(x = TBB165, idents = c("Singlet"))
 
 #Test
 DimPlot(object = TBB165.singlet, reduction = 'tsne', pt.size = 0.5)
@@ -173,5 +175,5 @@ TBB165.singlet$DF.classifications_0.25_0.005_429<- NULL
 TBB165.singlet$DF.classifications_0.25_0.005_302<- NULL
 
 #Save Seurat object
-saveRDS(TBB165.singlet, file = paste0(out.path, "TBB165_singlet.rds"))
+saveRDS(TBB165.singlet, file = paste0("../../data/doublet_output/", "TBB165_singlet.rds"))
 ```

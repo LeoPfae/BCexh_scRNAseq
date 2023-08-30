@@ -29,9 +29,10 @@ library(DoubletFinder)
 #use_python("C:/Users/SandraT/AppData/Local/Continuum/anaconda3/envs/r-reticulate/python.exe")
 #umap-learn <- import("umap-learn")
 
-in.path = "~/RNAseq/fgcz/ST_TAMsBC_10x_Run01/CellRangerCount_37250_2019-05-27--16-31-27/"
-out.path = "~/Code/10x/DoubletFinder/output/TBB075/"
-TBB075.data <- Read10X(paste0(in.path, "T_BB075/filtered_feature_bc_matrix"))
+in.path = "../../data/E-MTAB-10607/"
+out.path = "../../data/doublet_output/"
+TBB075.data <- read.table("../../data/E-MTAB-10607/TBB075_singlecell_count_matrix.txt")
+TBB075.data <- as(as.matrix(TBB075.data), "sparseMatrix")
 ```
 
 # Individual Sample preprocessing
@@ -76,9 +77,9 @@ FeaturePlot(TBB075, reduction = 'umap', features = c("CD3E", "CD14", "PTPRC", "E
 
 ```{r}
 #Read in table with cluster ids
-cluster.ids <- read.csv(file = paste0(out.path, "cluster_celltype.csv"))
+cluster.ids <- read.csv(file = "../../03_Additional_files/cluster_celltypes_res2_v2.csv")
 
-new.cluster.ids <- cluster.ids$celltype
+new.cluster.ids <- cluster.ids$cell.type
 new.cluster.ids <- as.character(new.cluster.ids)
 names(x = new.cluster.ids) <- levels(x = TBB075)
 TBB075 <- RenameIdents(object = TBB075, new.cluster.ids)
@@ -147,7 +148,7 @@ table(TBB075@meta.data$DF_hi.lo, TBB075@meta.data$RNA_snn_res.0.4)
 Idents(TBB075) <- TBB075@meta.data$DF_hi.lo
 
 # Create a Seurat object with only the immune cell clusters
-TBB075.singlet <- subset(x = TBB075, idents =c("Singlet", "Doublet_lo"))
+TBB075.singlet <- subset(x = TBB075, idents =c("Singlet"))
 
 #Test
 DimPlot(object = TBB075.singlet, reduction = 'tsne', pt.size = 0.5)
@@ -162,5 +163,5 @@ TBB075.singlet$DF.classifications_0.25_0.005_422<- NULL
 TBB075.singlet$DF_hi.lo<- NULL
 
 #Save Seurat object
-saveRDS(TBB075.singlet, file = paste0(out.path, "TBB075_singlet.rds"))
+saveRDS(TBB075.singlet, file = paste0("../../data/doublet_output/", "TBB075_singlet.rds"))
 ```

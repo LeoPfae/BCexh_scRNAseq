@@ -25,6 +25,8 @@ library(DoubletFinder)
 in.path = "~/Data/Sequencing_data/10x_run2_cellranger_FilteredFeatureMatrix/"
 out.path = "~/Code/10x/DoubletFinder/output/TBB035/"
 TBB035.data <- Read10X(paste0(in.path, "TBB035"))
+TBB035.data <- read.table("../../data/E-MTAB-10607/TBB011_singlecell_count_matrix.txt")
+TBB035.data <- as(as.matrix(TBB035.data), "sparseMatrix")
 ```
 
 # Individual Sample preprocessing
@@ -69,9 +71,9 @@ FeaturePlot(TBB035, reduction = 'umap', features = c("CD3E", "CD14", "PTPRC", "E
 
 ```{r}
 #Read in table with cluster ids
-cluster.ids <- read.csv(file = paste0(out.path, "cluster_celltype.csv"))
+cluster.ids <- read.csv(file = "../../03_Additional_files/cluster_celltypes_res2_v2.csv")
 
-new.cluster.ids <- cluster.ids$celltype
+new.cluster.ids <- cluster.ids$cell.type
 new.cluster.ids <- as.character(new.cluster.ids)
 names(x = new.cluster.ids) <- levels(x = TBB035)
 TBB035 <- RenameIdents(object = TBB035, new.cluster.ids)
@@ -105,12 +107,12 @@ nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
 ## Run DoubletFinder with varying classification stringencies 
 ```{r}
 TBB035 <- doubletFinder_v3(TBB035, PCs = 1:10, pN = 0.25, pK = 0.005, nExp = nExp_poi, reuse.pANN = FALSE)
-TBB035 <- doubletFinder_v3(TBB035, PCs = 1:10, pN = 0.25, pK = 0.005, nExp = nExp_poi.adj, reuse.pANN = "pANN_0.25_0.005_910")
+TBB035 <- doubletFinder_v3(TBB035, PCs = 1:10, pN = 0.25, pK = 0.005, nExp = nExp_poi.adj, reuse.pANN = "pANN_0.25_0.005_1000")
 ```
 
 ## Plot results 
 ```{r}
-TBB035@meta.data[,"DF_hi.lo"] <- TBB035@meta.data$DF.classifications_0.25_0.005_910
+TBB035@meta.data[,"DF_hi.lo"] <- TBB035@meta.data$DF.classifications_0.25_0.005_1000
 TBB035@meta.data$DF_hi.lo[which(TBB035@meta.data$DF_hi.lo == "Doublet" & TBB035@meta.data$DF.classifications_0.25_0.005_707 == "Singlet")] <- "Doublet_lo"
 TBB035@meta.data$DF_hi.lo[which(TBB035@meta.data$DF_hi.lo == "Doublet")] <- "Doublet_hi"
 DFplot_7perc_pK0.005 <- DimPlot(TBB035, group.by="DF_hi.lo", plot.order=c("Doublet_hi","Doublet_lo","Singlet"), colors.use=c("black","gold","red"))
@@ -162,4 +164,4 @@ TBB035.singlet$DF.classifications_0.25_0.005_707 <- NULL
 #TBB035.singlet$DF_hi.lo<- NULL
 
 #Save Seurat object
-saveRDS(TBB035.singlet, file = paste0(out.path, "TBB035_singlet.rds"))
+saveRDS(TBB035.singlet, file = paste0("../../data/doublet_output/", "TBB035_singlet.rds"))

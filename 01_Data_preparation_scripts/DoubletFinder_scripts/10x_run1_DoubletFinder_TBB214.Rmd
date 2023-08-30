@@ -34,6 +34,8 @@ umap <- import("umap")
 in.path = "Y:/RNAseq/fgcz/ST_TAMsBC_10x_Run01/CellRangerCount_37250_2019-05-27--16-31-27/"
 out.path = "Z:/server_homes/sandrat/Code/10x/10x_Run1_Pilot_comb/output/DoubletFinder/TBB214/"
 TBB214.data <- Read10X(paste0(in.path, "T_BB214/filtered_feature_bc_matrix"))
+TBB214.data <- read.table("../../data/E-MTAB-10607/TBB214_singlecell_count_matrix.txt")
+TBB214.data <- as(as.matrix(TBB214.data), "sparseMatrix")
 ```
 
 # Individual Sample preprocessing
@@ -71,9 +73,9 @@ TBB214 <- FindClusters(object = TBB214, resolution = 0.4)
 
 ```{r}
 #Read in table with cluster ids
-cluster.ids <- read.csv(file = paste0(out.path, "cluster_celltype.csv"))
+cluster.ids <- read.csv(file = "../../03_Additional_files/cluster_celltypes_res2_v2.csv")
 
-new.cluster.ids <- cluster.ids$celltype
+new.cluster.ids <- cluster.ids$cell.type
 new.cluster.ids <- as.character(new.cluster.ids)
 names(x = new.cluster.ids) <- levels(x = TBB214)
 TBB214 <- RenameIdents(object = TBB214, new.cluster.ids)
@@ -148,11 +150,11 @@ table(TBB214@meta.data$DF_hi.lo, TBB214@meta.data$RNA_snn_res.0.4)
 Idents(TBB214) <- TBB214@meta.data$DF_hi.lo
 
 # Create a Seurat object with only the immune cell clusters
-TBB214.singlet <- SubsetData(object = TBB214, ident.use = c("Singlet", "Doublet_lo"))
+TBB214.singlet <- subset(x = TBB214, idents = c("Singlet"))
 
 #Test
 DimPlot(object = TBB214.singlet, reduction = 'tsne', pt.size = 0.5)
 
 #Save Seurat object
-saveRDS(TBB214.singlet, file = paste0(out.path, "TBB214_singlet.rds"))
+saveRDS(TBB214.singlet, file = paste0("../../data/doublet_output/", "TBB214_singlet.rds"))
 ```
