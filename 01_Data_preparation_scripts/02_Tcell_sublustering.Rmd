@@ -54,7 +54,7 @@ run1.Tcell$SCT_snn_res.1 <- droplevels(run1.Tcell$SCT_snn_res.1)
 ## Load object
 
 ```{r}
-run1.Tcell <- readRDS(file = paste(in.path, "T_NK_cells.rds", sep = ''))
+run1.Tcell <- readRDS(file = "../data/out/T_cell_manual.RDS")
 
 # store Keratin and MGP percentage in object meta data
 run1.Tcell <- PercentageFeatureSet(run1.Tcell, pattern = "^KRT", col.name = "percent.krt")
@@ -113,10 +113,11 @@ run1.Tcell <- FindClusters(object = run1.Tcell, resolution = 1)
 #Query number of clusters and cells per cluster
 cells.per.cluster <- table(... = run1.Tcell@meta.data$SCT_snn_res.1)
 cells.per.cluster
-write.csv(cells.per.cluster, file = paste0(out.path, "15dim_res1CellsPerCluster.csv"), row.names = FALSE)
+write.csv(cells.per.cluster, file = paste0("../data/out/", "15dim_res1CellsPerCluster.csv"), row.names = FALSE)
 
 #Save object
-run1.Tcell <- saveRDS(run1.Tcell, file = paste(out.path, "run1_Tcell_15dim.rds", sep = ''))
+saveRDS(run1.Tcell, file = paste("../data/out/", "run1_Tcell_15dim.rds", sep = ''))
+run1.Tcell <- readRDS("../data/out/run1_Tcell_15dim.rds")
 
 # QC plots
 VlnPlot(object = run1.Tcell, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, pt.size = 0, sort = FALSE)
@@ -494,7 +495,7 @@ p = Heatmap(subset(RNA.average.znorm, select=cytotoxic), show_row_names = TRUE, 
 ```{r}
 
 #Read in table with cluster ids
-cluster.ids <- read.csv(file = paste0(out.path, "Tcell_metacluster_assignment.csv"))
+cluster.ids <- read.csv(file = "../03_Additional_files/Tcell_metacluster_assignment.csv")
 Idents(run1.Tcell) <- run1.Tcell$SCT_snn_res.1
 
 #Metacluster assignment
@@ -530,7 +531,8 @@ run1.Tcell[["TNK_subtype"]] <- Idents(object = run1.Tcell)
 
 
 # plot_celltype 
-DimPlot(object = run1.Tcell, reduction = 'umap', label = FALSE, pt.size = 0.5, group.by = "TNK_subtype")
+Idents(run1.Tcell) <- "seurat_clusters"
+LabelClusters(DimPlot(object = run1.Tcell, reduction = 'umap', label = FALSE, pt.size = 0.5), id = "ident")
 
 ```
 

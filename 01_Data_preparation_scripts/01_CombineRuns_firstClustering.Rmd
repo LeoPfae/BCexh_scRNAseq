@@ -34,6 +34,36 @@ out.path = "../../BCexh_scRNAseq/data/out/"
 
 ```
 
+## Custom  
+```{r}
+# Confirm cluster annotations
+all.merged <- readRDS("../data/out/merged_complete_umap.rds")
+DimPlot(all.merged)
+FeaturePlot(all.merged, features = c("EPCAM", "PECAM1", "PDGFRB", "PTPRC", "CD3E", "CD14", "HLA-DRA", "ITGAX", "MS4A1", "MS4A2", "IGKC"))
+ggsave("./feature_test.png", width = 20, height = 15)
+
+annotation_csv <- read.csv("../03_Additional_files/cluster_celltypes_res2_v2.csv")
+annotation_csv <- rbind(annotation_csv, c(61, "NA"))
+
+Idents(all.merged) <-all.merged$SCT_snn_res.2
+cluster.ids <- annotation_csv
+
+new.cluster.ids <- cluster.ids$cell.type
+new.cluster.ids <- as.character(new.cluster.ids)
+names(x = new.cluster.ids) <- levels(x = all.merged)
+all.merged <- RenameIdents(object = all.merged, new.cluster.ids)
+
+
+T_cells <- CellSelector(DimPlot(all.merged))
+T_cell_seurat <- subset(all.merged, cells = T_cells)
+
+saveRDS(T_cell_seurat, "../data/out/T_cell_manual.RDS")
+
+DimPlot(T_cell_seurat)
+FeaturePlot(T_cell_seurat, features = c("CD3E"))
+```
+
+
 ## Read in objects ##
 Seurat object containing all cells from Pilot and Run1
 Seurat objects for all Run2 samples created by DoubletFinder

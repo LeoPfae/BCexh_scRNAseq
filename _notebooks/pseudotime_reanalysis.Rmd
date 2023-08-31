@@ -1,0 +1,200 @@
+---
+title: "Pseudotime reanalysis"
+output: html_document
+date: "2023-08-30"
+---
+
+# Pseudotime reanalysis  
+**Background**
+
+
+
+
+## General  
+```{r}
+suppressMessages({
+  library(Seurat)
+  library(dplyr)
+  library(data.table)
+  library(tools)
+  library(stringr)
+  library(futile.logger)
+  library(devtools)
+  library(ouija)
+})
+```
+
+
+
+## Transform to Seurat  
+```{r}
+all_files <- list.files("../data/E-MTAB-10607/", full.names = TRUE)
+relevant_files <- all_files[startsWith(basename(all_files), "T")]
+prefixes <- str_split_fixed(file_path_sans_ext(basename(relevant_files)), "_", 2)[, 1] %>% unique()
+
+
+lapply(prefixes[1:length(prefixes)], function(x) {
+  flog.info(x)
+  count_matrix <- read.table(relevant_files[file_path_sans_ext(basename(relevant_files)) %like% paste0(x, "_singlecell_count_matrix")], row.names = 1)
+  colnames(count_matrix) <- paste0(x, "_", str_split_fixed(colnames(count_matrix), "\\.", 2)[, 1])
+  flog.info("Loaded count matrix")
+  count_matrix <- as(as.matrix(count_matrix), "sparseMatrix")
+  flog.info("Transformed to sparse matrix")
+  
+  meta_data <- fread(relevant_files[file_path_sans_ext(basename(relevant_files)) %like% paste0(x, "_complete_singlecell_metadata")]) %>% data.frame(row.names = 1)
+  flog.info("Loaded metadata")
+
+  seurat_object <- CreateSeuratObject(counts = count_matrix)
+  seurat_object <- AddMetaData(seurat_object, metadata = meta_data)
+  saveRDS(seurat_object, file.path("../data/seurats/", paste0(x, ".rds")))
+  seurat_object
+})
+
+
+```
+
+## Subset to T cells  
+```{r}
+all_seurats <- list.files("../data/seurats/", full.names = TRUE)
+
+lapply(all_seurats, function(x) {
+  flog.info(x)
+  seurat_loaded <- readRDS(x)
+  seurat_subset <- subset(seurat_loaded, subset = cell_type == "T/NK cell")
+  saveRDS(seurat_subset, file.path("../data/seurats_tcell/", file_path_sans_ext(basename(x))))
+  
+  rm(seurat_loaded)
+  rm(seurat_subset)
+})
+
+sample_seurat <- readRDS(all_seurats[[1]])
+```
+
+
+## Merge remaining Seurats  
+```{r}
+all_seurats <- list.files("../data/seurats_tcell/", full.names = TRUE)
+seurat_list <- lapply(all_seurats, readRDS)
+
+
+seurat_merged <- merge(x = seurat_list[[1]], y = seurat_list[2:length(seurat_list)])
+saveRDS(seurat_merged, "../data/out/custom_merge_tcell.rds")
+```
+
+
+## Pseudotime general
+
+```{r}
+### Prepare ###
+all.Tcell <- seurat_merged
+
+## Subset CD8_exhausted, cytotoxic and naive T cells
+Idents(all.Tcell) <- all.Tcell$Tcell_cluster
+CD8 <- subset(all.Tcell, idents = c("T-naive", "T-cytotoxic-1", "T-cytotoxic-2","T-cytotoxic-3","T-cytotoxic-4", "T-CD8-exhausted"))
+
+# Subsample max 800 cells per sample
+Idents(CD8) <- CD8$orig.ident
+set.seed(11)
+CD8.sub.800 <- subset(x = CD8, downsample=800)
+CD8.sub.800 <- NormalizeData(CD8.sub.800)
+
+# CUSTOM: Recalculate ouija pseudotime
+## Load genes from publication
+ouija_genes <- read.table(text = "CCR7	switch
+IL7R	switch
+SELL	switch
+CD69	switch
+PDCD1	switch
+CXCL13	switch
+LAG3	switch
+HAVCR2	switch
+CD27	switch
+CD38	switch
+TIGIT	switch
+CTLA4	switch
+ENTPD1	switch
+GZMB	switch
+FASLG	switch
+TCF7	transient
+KLRG1	transient
+CX3CR1	transient
+FCGR3A	transient
+PRF1	transient
+TNF	transient
+IFNG	transient
+GZMK	transient")
+colnames(ouija_genes) <- c("gene",	"putative_response_type")
+
+## Get relevant matrix from Seurat
+count_matrix <- LayerData(CD8.sub.800, layer = "data")
+ouija_matrix <- count_matrix[rownames(count_matrix) %in% ouija_genes$gene, ]
+
+## Reorder gene table to get correct gene types to ouija
+ouija_genes <- ouija_genes[match(rownames(ouija_matrix), ouija_genes$gene), ]
+
+# Calculate ouija
+oui <- ouija(t(as.matrix(ouija_matrix)), ouija_genes$putative_response_type, iter = 6000) 
+
+saveRDS(oui, "../data/out/ouija.rds")
+
+# Read in ouija object (or calculate new, but this takes ~48h when using 6000 iterations)
+oui <- readRDS(file = paste0(in.path, "pseudotime/ouija/CD8_cytotoxic_new_sub800_6000iter/ouija_CD8_sub800each_6000iter_new.rds"))
+
+#extract pseudotime and add to CD8 object metadata
+tmap <- map_pseudotime(oui)
+CD8.sub.800$pseudotime <- tmap
+CD8.df <- CD8.sub.800@meta.data
+CD8.df <- droplevels(CD8.df)
+
+## Rank cells by pseudotime
+CD8.df<- setorder(CD8.df, pseudotime)
+CD8.df$rank <- c(1:nrow(CD8.df))
+
+### Plot metacluster density ###
+p_density <- ggplot(CD8.df)+
+  geom_density(aes(x = rank, color = metacluster), size = 1)+
+  scale_color_manual(values = colors[c(4, 19, 31)])+
+  theme(panel.background = element_blank())
+
+### Plot cell jitter ###
+p_jitter <- ggplot(CD8.df, aes(rank, rnorm(8364), color=metacluster))+
+  geom_jitter(alpha = 0.5, size = 1)+
+  scale_color_manual(values = colors[c(4, 19, 31)])+
+  theme(panel.background=element_blank(), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())
+
+### Plot cluster averages ###
+cluster.mean <- CD8.df %>% 
+  group_by(cluster) %>% 
+  summarise(mean = mean(rank))
+
+p_cluster <- ggplot(data = cluster.mean, aes(mean, "cells", fill = cluster))+
+  geom_point(pch=24, size = 4, color="black")+
+  scale_fill_manual(values = colors[c(3, 9, 17, 28, 36, 44)])+
+    theme(panel.background=element_blank(), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())+
+  xlim(0,8346)
+
+### Plot sample averages ###
+patient.mean <- CD8.df %>% 
+  group_by(orig.ident) %>% 
+  summarise(mean = mean(rank))
+colnames(patient.mean) <- c("patient", "mean_pseudotime")
+patient.mean$TIG <- c("TIG2", "TIG3", "TIG3","TIG3", "TIG2", "TIG2","TIG2","TIG2","TIG2","TIG3","TIG3","TIG3","TIG3","TIG2")
+
+pos <- position_jitter(height = 0.2, seed = 1)
+p_patient <- ggplot(data = patient.mean, aes(mean_pseudotime, "cells", fill = TIG))+
+  geom_jitter(pch=21, size = 3, color="black", position = pos)+
+    theme(panel.background=element_blank(), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())+
+  xlim(0,8346)
+
+p <- p_density/p_jitter/p_cluster/p_patient
+  
+```

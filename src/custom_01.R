@@ -20,7 +20,7 @@ library(magrittr)
 library(clustree)
 library(futile.logger)
 
-
+'
 in.path = "../../BCexh_scRNAseq/data/doublet_output/"
 out.path = "../../BCexh_scRNAseq/data/out/"
 
@@ -47,6 +47,9 @@ all.merged<- FindClusters(object = all.merged, resolution = 2)
 all.merged <- RunUMAP(object = all.merged, dims = 1:27)
 
 saveRDS(all.merged, file = paste0(out.path, "merged_complete_umap.rds"))
+
+'
+
 all.merged <- readRDS(file = paste0(out.path, "merged_complete_umap.rds"))
 
 flog.info("Starting cell cluster analysis")
