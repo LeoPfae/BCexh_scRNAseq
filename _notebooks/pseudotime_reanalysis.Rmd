@@ -16,12 +16,23 @@ suppressMessages({
   library(Seurat)
   library(dplyr)
   library(data.table)
+  library(tidyr)
   library(tools)
   library(stringr)
   library(futile.logger)
   library(devtools)
   library(ouija)
+  library(ggplot2)
+  library(scales)
+  library(patchwork)
+  library(ggridges)
+  library(ggsci)
+  library(jsonlite)
+  source("../../../metabolic-exhaustion/src/run_cell_type_annotation.R")
 })
+
+colors <- hue_pal()(50)
+custom_colors <- append(pal_npg()(10), pal_frontiers()(10)[2:10])
 ```
 
 
@@ -86,7 +97,7 @@ saveRDS(seurat_merged, "../data/out/custom_merge_tcell.rds")
 
 ```{r}
 ### Prepare ###
-all.Tcell <- seurat_merged
+all.Tcell <- readRDS("../data/out/custom_merge_tcell.rds")
 
 ## Subset CD8_exhausted, cytotoxic and naive T cells
 Idents(all.Tcell) <- all.Tcell$Tcell_cluster
@@ -138,11 +149,27 @@ oui <- ouija(t(as.matrix(ouija_matrix)), ouija_genes$putative_response_type, ite
 saveRDS(oui, "../data/out/ouija.rds")
 
 # Read in ouija object (or calculate new, but this takes ~48h when using 6000 iterations)
-oui <- readRDS(file = paste0(in.path, "pseudotime/ouija/CD8_cytotoxic_new_sub800_6000iter/ouija_CD8_sub800each_6000iter_new.rds"))
+oui <- readRDS("../data/out/ouija.rds")
 
 #extract pseudotime and add to CD8 object metadata
 tmap <- map_pseudotime(oui)
-CD8.sub.800$pseudotime <- tmap
+
+# CUSTOM
+## Change rownames of tmap to cell names
+tmap_df <- tmap %>% data.frame()
+rownames(tmap_df) <- Cells(CD8.sub.800)
+colnames(tmap_df) <- c("pseudotime")
+## Arrange by pseudotime and add rank
+tmap_df <- tmap_df %>% arrange(pseudotime) %>% mutate(rank = row_number())
+## Add data to Seurat
+CD8.sub.800 <- AddMetaData(CD8.sub.800, tmap_df)
+# END CUSTOM
+
+# CUSTOM
+  # Line removed from analysis because metadata added before
+CD8.sub.800$pseudotime <- tmap_df
+# END CUSTOM
+
 CD8.df <- CD8.sub.800@meta.data
 CD8.df <- droplevels(CD8.df)
 
@@ -150,16 +177,20 @@ CD8.df <- droplevels(CD8.df)
 CD8.df<- setorder(CD8.df, pseudotime)
 CD8.df$rank <- c(1:nrow(CD8.df))
 
+# CUSTOM
+  # Save data
+saveRDS(CD8.sub.800, "../data/out/T_cell_sub800_pseudotime.rds")
+
 ### Plot metacluster density ###
 p_density <- ggplot(CD8.df)+
-  geom_density(aes(x = rank, color = metacluster), size = 1)+
-  scale_color_manual(values = colors[c(4, 19, 31)])+
+  geom_density(aes(x = rank, color = Tcell_metacluster), size = 1)+
+  scale_color_manual(values = colors[c(31, 19, 4)])+
   theme(panel.background = element_blank())
 
 ### Plot cell jitter ###
-p_jitter <- ggplot(CD8.df, aes(rank, rnorm(8364), color=metacluster))+
+p_jitter <- ggplot(CD8.df, aes(rank, rnorm(8364), color=Tcell_metacluster))+
   geom_jitter(alpha = 0.5, size = 1)+
-  scale_color_manual(values = colors[c(4, 19, 31)])+
+  scale_color_manual(values = colors[c(31, 19, 4)])+
   theme(panel.background=element_blank(), 
         panel.border = element_rect(colour = "black", fill=NA, size=1),
         axis.text.y = element_blank(),
@@ -167,12 +198,12 @@ p_jitter <- ggplot(CD8.df, aes(rank, rnorm(8364), color=metacluster))+
 
 ### Plot cluster averages ###
 cluster.mean <- CD8.df %>% 
-  group_by(cluster) %>% 
+  group_by(Tcell_cluster) %>% 
   summarise(mean = mean(rank))
 
-p_cluster <- ggplot(data = cluster.mean, aes(mean, "cells", fill = cluster))+
+p_cluster <- ggplot(data = cluster.mean, aes(mean, "cells", fill = Tcell_cluster))+
   geom_point(pch=24, size = 4, color="black")+
-  scale_fill_manual(values = colors[c(3, 9, 17, 28, 36, 44)])+
+  scale_fill_manual(values = rev(colors[c(3, 9, 17, 28, 36, 44)]))+
     theme(panel.background=element_blank(), 
         panel.border = element_rect(colour = "black", fill=NA, size=1),
         axis.text.y = element_blank(),
@@ -197,4 +228,329 @@ p_patient <- ggplot(data = patient.mean, aes(mean_pseudotime, "cells", fill = TI
 
 p <- p_density/p_jitter/p_cluster/p_patient
   
+
+p
+```
+
+
+
+## Add Gene Set scores  
+```{r}
+# Load data
+## Load SeuratObject
+CD8.sub.800 <- readRDS("../data/out/T_cell_sub800_pseudotime.rds")
+## Load gene set score 
+standard_gene_sets <- read_json("../../../metabolic-exhaustion/src/gene_sets/human/h.all.v2023.1.Hs.json")
+standard_gene_sets <- standard_gene_sets[c("HALLMARK_GLYCOLYSIS", "HALLMARK_OXIDATIVE_PHOSPHORYLATION")]
+standard_gene_sets <- lapply(standard_gene_sets, function(x) x$geneSymbols %>% as.character())
+
+custom_gene_sets <- read_json("../../../metabolic-exhaustion/src/gene_sets/human/custom_gene_sets.json")
+custom_gene_sets <- lapply(custom_gene_sets, function(x) x$geneSymbols %>% as.character())
+
+human_gene_set_list <- append(standard_gene_sets, custom_gene_sets)
+
+# Run gene set scoring on object
+for (x in 1:length(human_gene_set_list)) {
+  gene_set_name <- names(human_gene_set_list)[[x]]
+  flog.info(gene_set_name)
+  
+  raw_features <- human_gene_set_list[[x]]
+  relevant_features <- intersect(raw_features, Features(CD8.sub.800))
+  
+  CD8.sub.800 <- AddModuleScore(CD8.sub.800, features = list(relevant_features), name = gene_set_name)
+  CD8.sub.800@misc[[gene_set_name]] <- relevant_features
+}
+
+saveRDS(CD8.sub.800, "../data/out/T_cell_sub800_pseudotime_gss.rds")
+```
+
+## Add consensus cell type annotation  
+```{r}
+process_sample(
+  seurat_path = "../data/out/T_cell_sub800_pseudotime_gss.rds",
+  species = "human",
+  PT.ref = suppressMessages(load.reference.map("../../utility/annotation/ref_TILAtlas_mouse_v1.rds")),
+  HPCA = suppressMessages(HumanPrimaryCellAtlasData()),
+  Monaco = suppressMessages(MonacoImmuneData()),
+  azimuth_ref = "pbmcref",
+  #texh_ref = load.reference.map("../../../metabolic-exhaustion/data/human/pai_lineagetracing/custom_files/joy_ref_data.rds"),
+  save_output = TRUE,
+  load_celltype_ref = FALSE,
+  annotate_texh = TRUE,
+  save_checkpoint = TRUE
+)
+```
+
+## Run UMAP  
+```{r}
+CD8.sub.800 <- readRDS("../data/out/T_cell_sub800_pseudotime_gss.rds")
+
+CD8.sub.800 <- FindVariableFeatures(CD8.sub.800)
+CD8.sub.800 <- ScaleData(CD8.sub.800, features = VariableFeatures(CD8.sub.800))
+
+CD8.sub.800 <- RunPCA(CD8.sub.800)
+ElbowPlot(CD8.sub.800)
+
+CD8.sub.800 <- FindNeighbors(CD8.sub.800, dims = 1:15)
+CD8.sub.800 <- FindClusters(CD8.sub.800, resolution = 0.5)
+
+CD8.sub.800 <- RunUMAP(CD8.sub.800, dims = 1:15)
+
+saveRDS(CD8.sub.800, "../data/out/T_cell_sub800_pseudotime_gss.rds")
+
+DimPlot(CD8.sub.800)
+```
+
+
+## Plots  
+**Plot pseudotime linear**  
+```{r}
+# Load data
+CD8.sub.800 <- readRDS("../data/out/T_cell_sub800_pseudotime_gss.rds")
+CD8.df <- CD8.sub.800@meta.data
+
+# With publication labels
+## Plot metacluster density
+p_density <- ggplot(CD8.df)+
+  geom_density(aes(x = rank, color = Tcell_metacluster), size = 1)+
+  scale_color_manual(values = colors[c(31, 19, 4)])+
+  theme(panel.background = element_blank())
+
+## Plot cell jitter
+p_jitter <- ggplot(CD8.df, aes(rank, rnorm(8364), color=Tcell_metacluster))+
+  geom_jitter(alpha = 0.5, size = 1)+
+  scale_color_manual(values = colors[c(31, 19, 4)])+
+  theme(panel.background=element_blank(), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())
+
+## Plot cluster averages
+cluster.mean <- CD8.df %>% 
+  group_by(Tcell_cluster) %>% 
+  summarise(mean = mean(rank))
+
+p_cluster <- ggplot(data = cluster.mean, aes(mean, "cells", fill = Tcell_cluster))+
+  geom_point(pch=24, size = 4, color="black")+
+  scale_fill_manual(values = rev(colors[c(3, 9, 17, 28, 36, 44)]))+
+    theme(panel.background=element_blank(), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())+
+  xlim(0,8346)
+
+## Plot sample averages
+patient.mean <- CD8.df %>% 
+  group_by(orig.ident) %>% 
+  summarise(mean = mean(rank))
+colnames(patient.mean) <- c("patient", "mean_pseudotime")
+patient.mean$TIG <- c("TIG2", "TIG3", "TIG3","TIG3", "TIG2", "TIG2","TIG2","TIG2","TIG2","TIG3","TIG3","TIG3","TIG3","TIG2")
+
+## Merge
+pos<- position_jitter(height = 0.2, seed = 1)
+p_patient <- ggplot(data = patient.mean, aes(mean_pseudotime, "cells", fill = TIG))+
+  geom_jitter(pch=21, size = 3, color="black", position = pos)+
+    theme(panel.background=element_blank(), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())+
+  xlim(0,8346)
+
+p <- (p_density/p_jitter/p_cluster/p_patient) +
+  patchwork::plot_layout(heights = c(0.4, 0.2, 0.2, 0.2)) +
+  plot_annotation(title = "Pseudotime plot with publication labels")
+p
+ggsave("../_reports/pseudotime_reanalysis/publication_plot.png", plot = p, height = 8)
+
+
+
+
+
+# With custom labels
+## Plot metacluster density
+p_density <- ggplot(CD8.df)+
+  geom_density(aes(x = rank, color = PTexh_label), size = 1)+
+  scale_color_manual(values = colors[seq(from = 1, to = length(colors), length.out = 14)])+
+  theme(panel.background = element_blank())
+p_density
+
+## Plot cell jitter
+p_jitter <- ggplot(CD8.df, aes(rank, rnorm(8364), color=PTexh_label))+
+  geom_jitter(alpha = 0.5, size = 1)+
+  scale_color_manual(values = colors[seq(from = 1, to = length(colors), length.out = 14)])+
+  theme(panel.background=element_blank(), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())
+p_jitter
+
+## Plot cluster averages
+cluster.mean <- CD8.df %>% 
+  group_by(PTexh_label) %>% 
+  summarise(mean = mean(rank))
+
+p_cluster <- ggplot(data = cluster.mean, aes(mean, "cells", fill = PTexh_label))+
+  geom_jitter(pch=24, size = 4, color="black", width = 0)+
+  scale_fill_manual(values = rev(colors[seq(from = 1, to = length(colors), length.out = 14)]))+
+    theme(panel.background=element_blank(), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())+
+  xlim(0,8346)
+p_cluster
+
+## Plot sample averages
+patient.mean <- CD8.df %>% 
+  group_by(orig.ident) %>% 
+  summarise(mean = mean(rank))
+colnames(patient.mean) <- c("patient", "mean_pseudotime")
+patient.mean$TIG <- c("TIG2", "TIG3", "TIG3","TIG3", "TIG2", "TIG2","TIG2","TIG2","TIG2","TIG3","TIG3","TIG3","TIG3","TIG2")
+
+
+## Merge
+pos<- position_jitter(height = 0.2, seed = 1)
+p_patient <- ggplot(data = patient.mean, aes(mean_pseudotime, "cells", fill = TIG))+
+  geom_jitter(pch=21, size = 3, color="black", position = pos)+
+    theme(panel.background=element_blank(), 
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank())+
+  xlim(0,8346)
+
+p <- (p_density/p_jitter/p_cluster/p_patient) +
+  patchwork::plot_layout(heights = c(0.4, 0.2, 0.2, 0.2), guides = "collect") +
+  plot_annotation(title = "Pseudotime plot with publication labels")
+p
+ggsave("../_reports/pseudotime_reanalysis/pai_plot.png", plot = p, height = 14)
+
+
+
+
+
+
+
+# Improved Pai plot
+## Plot metacluster density
+ridge_order <- cluster.mean %>% arrange(desc(mean)) %>% pull(PTexh_label)
+
+p_density <- ggplot(CD8.df)+
+  geom_density_ridges(
+    aes(
+      x = rank,
+      y = factor(PTexh_label, levels = ridge_order),
+      fill = factor(PTexh_label, levels = ridge_order)),
+    size = 1,
+    quantile_lines = TRUE,
+    jittered_points = TRUE,
+    position = position_points_jitter(width = 0, height = 0.125),
+    point_size = 0.15,
+    point_alpha = 1,
+    alpha = 0.7,
+    vline_size = 1,
+    scale = 1
+    ) +
+  scale_fill_manual(values = custom_colors)+
+  labs(
+    x = "Pseudotime rank",
+    y = "Celltype annotated using Pai et al., ordered by mean pseudotime rank",
+    fill = "Joy et al. label"
+  )
+p_density
+ggsave("../_reports/pseudotime_reanalysis/pai_plot_ridges.png", plot = p_density, height = 15, width = 10)
+
+## Conditional density plot
+p_density <- ggplot(CD8.df)+
+  geom_density(aes(x = rank, y = stat(count), fill = PTexh_label), size = 1, position = "fill") +
+  scale_fill_manual(values = custom_colors)+
+  labs(
+    title = "Relative number of cell type by pseudotime rank",
+    x = "Pseudotime rank",
+    y = "Percentage of celltype",
+    fill = "Joy et al. label"    
+  )
+p_density
+ggsave("../_reports/pseudotime_reanalysis/pai_plot_density.png", plot = p_density, width = 10)
+```
+
+
+**Plot pseudotime on UMAP**  
+```{r}
+CD8.sub.800 <- readRDS("../data/out/T_cell_sub800_pseudotime_gss.rds")
+pseudotime_plot <- FeaturePlot(CD8.sub.800, features = c("rank")) +
+  scale_color_viridis_c() +
+  labs(
+    title = "Pseudotime rank of cells"
+  )
+pub_annotation_plot <- DimPlot(CD8.sub.800, group.by = "Tcell_metacluster") +
+  labs(
+    title = "Tcell annotation from publication"
+  )
+joy_annotation_plot <- DimPlot(CD8.sub.800, group.by = "PTexh_label") +
+  scale_color_manual(values = custom_colors)
+  labs(
+    title = "Tcell annotation from Joy et al."
+  )
+
+merged_plot <- (pseudotime_plot | plot_spacer()) /
+               (pub_annotation_plot | joy_annotation_plot)
+
+ggsave("../_reports/pseudotime_reanalysis/pseudotime_umap.png", width = 14, height = 12)
+```
+
+
+**Plot gene scores**  
+```{r}
+# Load data
+CD8.sub.800 <- readRDS("../data/out/T_cell_sub800_pseudotime_gss.rds")
+CD8.df <- CD8.sub.800@meta.data
+
+# Prep long df for simultaneous plotting
+CD8.df.long <- CD8.df %>% 
+  pivot_longer(
+    cols = grep("[A-Za-z)]1$", colnames(.)),
+    names_to = "gene_set",
+    values_to = "score"
+  )
+
+# Plot general overview of gene sets
+gene_set_plot <- ggplot() +
+  geom_point(data = CD8.df.long, aes(x = rank, y = score, color = PTexh_label), alpha = 1, size = 0.5)+
+  stat_smooth(data = CD8.df.long, aes(x = rank, y = score), color = "red", method = "loess")+
+  scale_color_manual(values = custom_colors) +  
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) +
+  facet_wrap(~gene_set, ncol = 4, scales = "free_y") +
+      theme(
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        )
+
+ggsave("../_reports/pseudotime_reanalysis/gene_set_scores.png", plot = gene_set_plot, width = 22, height = 20)
+
+
+# Plot overview of gene sets with Exh highlighted
+gene_set_plot_exh <- ggplot() +
+  geom_point(data = CD8.df.long, aes(x = rank, y = score), alpha = 0.5, size = 0.5, color = "grey") +
+  geom_point(data = CD8.df.long %>% filter(PTexh_label %in% c("CD8-EXH", "CD8-PROLIF-EXH")), aes(x = rank, y = score, color = PTexh_label), alpha = 1, size = 0.5)+
+  stat_smooth(data = CD8.df.long, aes(x = rank, y = score), color = "red", method = "loess")+
+  scale_color_manual(values = custom_colors[c(8, 11)]) +  
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) +
+  facet_wrap(~gene_set, ncol = 4, scales = "free_y") +
+      theme(
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        )
+
+ggsave("../_reports/pseudotime_reanalysis/gene_set_scores_exh.png", plot = gene_set_plot_exh, width = 22, height = 20)
+
+
+# Plot overview of gene sets with original labels
+gene_set_plot_orig <- ggplot() +
+  geom_point(data = CD8.df.long, aes(x = rank, y = score, color = Tcell_metacluster), alpha = 1, size = 0.5)+
+  stat_smooth(data = CD8.df.long, aes(x = rank, y = score), color = "red", method = "loess")+
+  scale_color_manual(values = custom_colors) +  
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) +
+  facet_wrap(~gene_set, ncol = 4, scales = "free_y") +
+      theme(
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        )
+
+ggsave("../_reports/pseudotime_reanalysis/gene_set_scores_orig.png", plot = gene_set_plot_orig, width = 22, height = 20)
 ```
