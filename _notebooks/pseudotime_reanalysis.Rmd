@@ -554,3 +554,93 @@ gene_set_plot_orig <- ggplot() +
 
 ggsave("../_reports/pseudotime_reanalysis/gene_set_scores_orig.png", plot = gene_set_plot_orig, width = 22, height = 20)
 ```
+
+
+
+**Plot expression of inhibitory receptors**  
+```{r}
+# Load data
+CD8.sub.800 <- readRDS("../data/out/T_cell_sub800_pseudotime_gss.rds")
+
+# Get expression for inhibitory receptors
+irs <- c(
+  "HAVCR2", #TIM-3
+  "TIGIT", #TIGIT
+  "CTLA4", #CTLA-4
+  "PDCD1", #PD-1
+  "LAG3" #LAG-3
+)
+
+# Plot Feature overview
+ir_umap <- FeaturePlot(CD8.sub.800, features = irs)
+pt_umap <- FeaturePlot(CD8.sub.800, features = "rank") + scale_color_viridis_c() + labs(title = "Pseudotime rank")
+merged_umap <- ir_umap + pt_umap + plot_annotation(title = "Expression of inhibitory receptors")
+ggsave("../_reports/pseudotime_reanalysis/inhibitory_receptor_umap.png", width = 12, height = 15, plot = merged_umap)
+
+# Plot expression in Pseudotime
+## Extract relevant expression values from count matrix
+count_matrix <- LayerData(CD8.sub.800, layer = "data")
+ir_matrix <- t(as.matrix(count_matrix[rownames(count_matrix) %in% irs, ]))
+## Add metadata
+CD8.sub.800 <- AddMetaData(CD8.sub.800, ir_matrix)
+## Add sum of expression
+CD8.df <- CD8.sub.800@meta.data
+CD8.df <- CD8.df %>% rowwise() %>% mutate(ir_expression_sum = sum(HAVCR2, TIGIT, CTLA4, PDCD1, LAG3))
+## Wide to long df
+CD8.df.long <- CD8.df %>% 
+  pivot_longer(
+    cols = c(all_of(irs), "ir_expression_sum"),
+    names_to = "gene_name",
+    values_to = "expression"
+  )
+
+## Plot general overview of gene sets
+ir_expression_plot <- ggplot() +
+  geom_point(data = CD8.df.long, aes(x = rank, y = expression, color = PTexh_label), alpha = 1, size = 0.5)+
+  stat_smooth(data = CD8.df.long, aes(x = rank, y = expression), color = "red", method = "loess")+
+  scale_color_manual(values = custom_colors) +  
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) +
+  facet_wrap(~gene_name, ncol = 3, scales = "free_y") +
+      theme(
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        ) +
+  labs(
+    title = "Expression of inhibitory receptors vs. pseudotime. Labels from Pai et al."
+  )
+ggsave("../_reports/pseudotime_reanalysis/ir_expression.png", plot = ir_expression_plot, width = 17, height = 10)
+
+
+# Plot overview of gene sets with Exh highlighted
+ir_expression_plot_exh <- ggplot() +
+  geom_point(data = CD8.df.long, aes(x = rank, y = expression), alpha = 0.5, size = 0.5, color = "grey") +
+  geom_point(data = CD8.df.long %>% filter(PTexh_label %in% c("CD8-EXH", "CD8-PROLIF-EXH")), aes(x = rank, y = expression, color = PTexh_label), alpha = 1, size = 0.5)+
+  stat_smooth(data = CD8.df.long, aes(x = rank, y = expression), color = "red", method = "loess")+
+  scale_color_manual(values = custom_colors[c(8, 11)]) +  
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) +
+  facet_wrap(~gene_name, ncol = 3, scales = "free_y") +
+      theme(
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        ) +
+  labs(
+    title = "Expression of inhibitory receptors vs. pseudotime. Labels from Pai et al. Texh cells highlighted."
+  )
+ggsave("../_reports/pseudotime_reanalysis/ir_expression_exh.png", plot = ir_expression_plot_exh, width = 17, height = 10)
+
+
+# Plot overview of gene sets with original labels
+ir_expression_plot_orig <- ggplot() +
+  geom_point(data = CD8.df.long, aes(x = rank, y = expression, color = Tcell_metacluster), alpha = 1, size = 0.5)+
+  stat_smooth(data = CD8.df.long, aes(x = rank, y = expression), color = "red", method = "loess")+
+  scale_color_manual(values = custom_colors) +  
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) +
+  facet_wrap(~gene_name, ncol = 3, scales = "free_y") +
+      theme(
+        panel.border = element_rect(colour = "black", fill=NA, size=1),
+        ) +
+  labs(
+    title = "Expression of inhibitory receptors vs. pseudotime. Labels from Tietscher et al."
+  )
+
+ggsave("../_reports/pseudotime_reanalysis/ir_expression_orig.png", plot = ir_expression_plot_orig, width = 17, height = 10)
+```
+
